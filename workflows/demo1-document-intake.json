@@ -1,0 +1,578 @@
+{
+  "name": "Demo 1 - Mixed PDF Pack (stage C: full demo)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Demo 1 — Mixed PDF pack → accounting-ready entries\n**Story:** a client emails one messy PDF (invoices, receipts, bank statement, utility bill, scans — any language). It gets split, classified, extracted, **validated by arithmetic**, and filed.\n\n**Flow:** Upload → Classify (1 AI call, whole pack) → Split into per-document PDFs → Extract fields (1 AI call per document) → Validate (no AI) → File to disk + Google Sheet → Summary (+ email).\n\n**Test set:** `test-data/mixed_pack_intl_v2.pdf` (14 pages, 12 docs, 5 countries, 3 currencies, 1 planted VAT error, 1 reverse-charge, 2 scans). Ground truth: `expected_output_v2.json`.\n\n**Run:** TriggerFormUpload → Execute step → upload PDF → WriteSummary → Execute step. ~2–3 min, ~$0.20 in API cost.",
+        "height": 260,
+        "width": 900,
+        "color": 4
+      },
+      "name": "Note - Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -560
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 1 · Intake\n**TriggerFormUpload** — n8n form with one PDF field (`pack`). In production: IMAP trigger on an intake mailbox.\n\n**PreparePDF** — reads the binary and exposes it as base64 so the API call can embed it.\n\n**Config** — all model names, prompts, the Google Sheet id/tab, output folder and notification address live here. Edit here, never inside the other nodes.",
+        "height": 260,
+        "width": 660,
+        "color": 6
+      },
+      "name": "Note - Intake",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 2 · Classify (Sonnet 5)\n**ClassifyPack** — sends the *whole* PDF once. The model sees text + page images, so it groups multi-page documents and reads scanned pages without a separate OCR step. Output: JSON with page ranges + type + vendor/country/currency.\n\n**ParseClassification** — parses JSON, checks every page is used exactly once (`coverage_ok`), emits one item per document, tracks tokens/cost.",
+        "height": 260,
+        "width": 480,
+        "color": 5
+      },
+      "name": "Note - Classify",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        680,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 3 · Split & extract\n**SplitPDF** — `pdf-lib` cuts the pack into one small PDF per document (only its pages) → binary `doc_pdf`, used for filing later.\n\n**ExtractFields** — one Sonnet 5 call per document, prompt picked by `doc_type` (invoice/utility · bank statement · receipt). Prompts say *copy numbers as printed, never fix totals* — that's the validator's job. Batched 3 at a time.\n\n**ParseExtraction** — parses JSON, merges with classification, per-doc cost.",
+        "height": 260,
+        "width": 700,
+        "color": 3
+      },
+      "name": "Note - Extract",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 4 · Validate (no AI)\n**Validate** — deterministic checks: line items = net (gross for receipts), net + VAT = gross, VAT = rate × net, rate valid for vendor country, 0% from EU vendor needs a reverse-charge clause, dates sane, bank opening + transactions = closing.\nFail → `needs_review` with plain-English reasons. Non-errors (reverse charge, foreign currency, scanned) → `tags`.\n\n*Demo line:* \"The AI extracts, arithmetic decides — nothing lands in the books unchecked.\"",
+        "height": 300,
+        "width": 480,
+        "color": 2
+      },
+      "name": "Note - Validate",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### 5 · Output — the demo payoff\n**FileDocuments** — renames every document `{date}_{vendor}_{number}.pdf` and writes it to `/files/sorted/{type}/` (pass) or `/files/needs-review/` (flagged). `/files` is the Mac folder `demo-workflows/output` — open it in Finder for the before/after shot. Also builds the flat sheet row.\n\n**AppendSheet** — appends one row per document to the Google Sheet (`sheet_id` / `sheet_tab` in Config). Columns auto-map by header name.\n\n**Summary → WriteSummary** — writes `last-run-summary.txt/json` into `/files` and prepares the email text.\n\n**SendSummaryEmail** — Gmail node, *disabled* until a Gmail credential exists; set `notify_to` in Config and enable.",
+        "height": 320,
+        "width": 1000,
+        "color": 1
+      },
+      "name": "Note - Output",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Ops · cost · GDPR\n- Models: `claude-sonnet-5` (no `temperature` param). Cheaper later: text-first classification, Haiku 4.5 for receipts/bills, prompt caching → ~$0.06/pack.\n- `pdf-lib` lives in the n8n volume (`/home/node/.n8n/custom-modules`); container needs `NODE_PATH` + `NODE_FUNCTION_ALLOW_EXTERNAL=pdf-lib`.\n- Container needs `-v <mac folder>:/files` and `NODE_FUNCTION_ALLOW_BUILTIN=fs,path` for the filing step.\n- Only the document itself goes to the API — no client identity, no account context. Bank IBAN is masked to last 4 in the output. Runs on an EU server in production; DPA signed; API data not used for training.",
+        "height": 240,
+        "width": 1100,
+        "color": 7
+      },
+      "name": "Note - Ops",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "formTitle": "Document pack intake",
+        "formDescription": "Upload one PDF containing invoices, receipts, bank statements — mixed is fine.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "pack",
+              "fieldType": "file",
+              "acceptFileTypes": ".pdf",
+              "multipleFiles": false,
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "TriggerFormUpload",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Take the uploaded PDF (whatever the binary key is called) and expose it as base64 JSON\n// so the HTTP Request node can embed it in the Anthropic document block.\nconst item = $input.first();\nconst key = Object.keys(item.binary || {})[0];\nif (!key) throw new Error('No file uploaded');\nconst bin = item.binary[key];\nif ((bin.mimeType || '').toLowerCase() !== 'application/pdf') {\n  throw new Error(`Expected a PDF, got ${bin.mimeType}`);\n}\nconst buf = await this.helpers.getBinaryDataBuffer(0, key);\nreturn [{\n  json: {\n    fileName: bin.fileName,\n    sizeKB: Math.round(buf.length / 1024),\n    receivedAt: new Date().toISOString(),\n    pdfBase64: buf.toString('base64')\n  },\n  binary: { pack: bin }\n}];"
+      },
+      "name": "PreparePDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "model-classify",
+              "name": "model_classify",
+              "value": "claude-sonnet-5",
+              "type": "string"
+            },
+            {
+              "id": "prompt-classify",
+              "name": "classify_system",
+              "value": "You classify pages of a mixed document pack that a client sent to an accounting firm in Lithuania. The pack may contain invoices, receipts, bank statements and utility bills in any language (Lithuanian, English, German, Swedish, Dutch...), on any page size, and some pages may be image-only scans (skewed, noisy, no crisp text).\n\nYour ONLY job here is to split the pack into logical documents and label each one. Do NOT extract amounts.\n\nRespond with ONLY valid JSON, no markdown fences, no commentary:\n{\"page_count\": <total pages>,\n \"documents\": [\n   {\"doc_id\": 1,\n    \"pages\": [1, 2],\n    \"doc_type\": \"invoice\" | \"bank_statement\" | \"receipt\" | \"utility_bill\" | \"other\",\n    \"vendor_or_bank\": \"<issuer name as printed, or null>\",\n    \"vendor_country\": \"<ISO 3166-1 alpha-2 from address / VAT prefix, or null>\",\n    \"language\": \"<ISO 639-1 of the document text>\",\n    \"currency\": \"<EUR|SEK|USD|... or null>\",\n    \"scanned\": true | false,\n    \"confidence\": \"high\" | \"medium\" | \"low\",\n    \"notes\": \"<one short sentence if anything is ambiguous, else empty string>\"}\n ]}\n\nRules:\n- Every page number from 1 to page_count appears in exactly one document, in ascending order.\n- Group continuation pages with their document: 'continued', 'page 2 of 2', a page that starts mid-table or has no header, a bank statement that continues.\n- A fuel, shop, cafe or restaurant till slip is a receipt, even if it shows VAT.\n- An electricity, heating, water, gas or telecom bill is utility_bill, not invoice.\n- scanned = true when the page is clearly a photograph or scan of paper (visible skew, noise, uneven lighting, blurred text). Cleanly rendered digital pages are scanned = false.\n- Never invent a vendor name; use null if not legible.",
+              "type": "string"
+            },
+            {
+              "id": "model-extract",
+              "name": "model_extract",
+              "value": "claude-sonnet-5",
+              "type": "string"
+            },
+            {
+              "id": "prompt-invoice",
+              "name": "extract_invoice",
+              "value": "You extract accounting data from ONE invoice (or utility bill) sent to an accounting firm in Lithuania. The invoice may be in any language and use local number/date formats.\nReturn exactly this JSON shape:\n{\"doc_type\": \"invoice\" | \"utility_bill\",\n \"vendor_name\": \"\", \"vendor_country\": \"ISO 3166-1 alpha-2 from address / VAT prefix\", \"vendor_vat_id\": \"\", \"language\": \"ISO 639-1\",\n \"invoice_number\": \"\", \"invoice_date\": \"YYYY-MM-DD\", \"due_date\": \"YYYY-MM-DD or null\", \"payment_terms\": \"e.g. Net 30, or null\",\n \"currency\": \"EUR|SEK|USD|...\",\n \"line_items\": [{\"description\": \"\", \"qty\": 0, \"unit_price\": 0.0, \"amount\": 0.0}],\n \"net_total\": 0.0, \"vat_rate_percent\": 0.0, \"vat_amount\": 0.0, \"gross_total\": 0.0,\n \"reverse_charge\": false,\n \"iban_on_invoice\": \"or null\",\n \"suggested_expense_category\": \"one of: Office supplies|Software & IT|Utilities|Meals & representation|Professional services|Vehicle & fuel|Other\",\n \"ocr_quality\": \"good\" | \"poor\",\n \"notes\": \"anything ambiguous, in one sentence, else empty string\"}\n- reverse_charge = true only when the invoice explicitly cites reverse charge / Art. 196 / \"BTW verlegd\" / \"atvirkštinis apmokestinimas\" and charges 0% VAT.\n- For utility bills, line_items are the consumption lines (electricity day/night, heating...).\nNormalization rules (apply to every field):\n- ALL dates to YYYY-MM-DD. German \"18.07.2026\" = 2026-07-18; US \"07/20/2026\" = 2026-07-20; Swedish/Lithuanian ISO dates stay as is.\n- ALL amounts to plain dot-decimal numbers: \"12 400,00\" -> 12400.00; \"121,60 EUR\" -> 121.60; \"$850.00\" -> 850.00. Never include currency symbols in numbers.\n- currency = the document's own currency (SEK stays SEK, USD stays USD). Never convert.\n- Copy numbers exactly as printed even if they look wrong — a separate validator checks the arithmetic. Do not \"fix\" totals.\n- If a field is not present, use null. Never invent values.\n- Label mapping: LT \"Suma be PVM\"=net, \"PVM\"=VAT, \"Iš viso / Mokėti\"=gross, \"Sąskaita faktūra\"=invoice; DE \"Netto/Zwischensumme\"=net, \"MwSt\"=VAT, \"Gesamtbetrag\"=gross, \"Rechnung\"=invoice; SE \"Netto\"=net, \"Moms\"=VAT, \"Att betala\"=gross, \"Faktura\"=invoice; NL \"BTW\"=VAT, \"Factuur\"=invoice.\n- The document may be a noisy scan. Read carefully; if a digit is unclear set \"ocr_quality\": \"poor\" and mention it in notes.\nRespond with ONLY valid JSON, no markdown fences, no commentary.",
+              "type": "string"
+            },
+            {
+              "id": "prompt-bank",
+              "name": "extract_bank_statement",
+              "value": "You extract data from ONE bank account statement (possibly multi-page).\nReturn exactly this JSON shape:\n{\"doc_type\": \"bank_statement\",\n \"bank_name\": \"\", \"account_holder\": \"\", \"iban_masked\": \"last 4 characters only, prefixed with ***\", \"currency\": \"EUR|...\",\n \"period_from\": \"YYYY-MM-DD\", \"period_to\": \"YYYY-MM-DD\",\n \"opening_balance\": 0.0, \"closing_balance\": 0.0,\n \"transactions\": [{\"date\": \"YYYY-MM-DD\", \"description\": \"\", \"amount\": 0.0, \"direction\": \"in\" | \"out\", \"balance_after\": 0.0}],\n \"ocr_quality\": \"good\" | \"poor\",\n \"notes\": \"\"}\n- amount is signed: incoming positive, outgoing negative. direction mirrors the sign.\n- Include EVERY transaction across all pages, in order. Never mask or omit descriptions.\n- Do NOT output the full IBAN — last 4 characters only.\nNormalization rules (apply to every field):\n- ALL dates to YYYY-MM-DD. German \"18.07.2026\" = 2026-07-18; US \"07/20/2026\" = 2026-07-20; Swedish/Lithuanian ISO dates stay as is.\n- ALL amounts to plain dot-decimal numbers: \"12 400,00\" -> 12400.00; \"121,60 EUR\" -> 121.60; \"$850.00\" -> 850.00. Never include currency symbols in numbers.\n- currency = the document's own currency (SEK stays SEK, USD stays USD). Never convert.\n- Copy numbers exactly as printed even if they look wrong — a separate validator checks the arithmetic. Do not \"fix\" totals.\n- If a field is not present, use null. Never invent values.\n- The document may be a noisy scan. Read carefully; if a digit is unclear set \"ocr_quality\": \"poor\" and mention it in notes.\nRespond with ONLY valid JSON, no markdown fences, no commentary.",
+              "type": "string"
+            },
+            {
+              "id": "prompt-receipt",
+              "name": "extract_receipt",
+              "value": "You extract data from ONE till receipt / cash-register slip (fuel, shop, cafe, restaurant, parking).\nReturn exactly this JSON shape:\n{\"doc_type\": \"receipt\",\n \"vendor_name\": \"\", \"vendor_country\": \"ISO 3166-1 alpha-2 or null\", \"vendor_vat_id\": \"or null\", \"language\": \"ISO 639-1\",\n \"receipt_number\": \"or null\", \"date\": \"YYYY-MM-DD\", \"time\": \"HH:MM or null\",\n \"currency\": \"EUR|...\",\n \"line_items\": [{\"description\": \"\", \"qty\": 0, \"unit_price\": 0.0, \"amount\": 0.0}],\n \"net_total\": 0.0, \"vat_rate_percent\": 0.0, \"vat_amount\": 0.0, \"gross_total\": 0.0,\n \"payment_method\": \"card|cash|null\",\n \"suggested_expense_category\": \"one of: Meals & representation|Vehicle & fuel|Office supplies|Travel|Other\",\n \"ocr_quality\": \"good\" | \"poor\",\n \"notes\": \"\"}\n- On receipts VAT is usually INCLUDED in the total: gross_total is the amount paid, vat_amount the VAT shown, net_total = gross - VAT.\nNormalization rules (apply to every field):\n- ALL dates to YYYY-MM-DD. ALL amounts to plain dot-decimal numbers (\"62,14 EUR\" -> 62.14). Never include currency symbols in numbers.\n- currency = the receipt's own currency. Never convert.\n- Copy numbers exactly as printed even if they look wrong — a separate validator checks the arithmetic. Do not \"fix\" totals.\n- If a field is not present, use null. Never invent values.\n- Label mapping: LT \"Suma / Iš viso\"=gross, \"PVM\"=VAT, \"Be PVM\"=net, \"Kvitas\"=receipt, \"Mokėta kortele\"=paid by card.\n- The document may be a noisy scan. Read carefully; if a digit is unclear set \"ocr_quality\": \"poor\" and mention it in notes.\nRespond with ONLY valid JSON, no markdown fences, no commentary.",
+              "type": "string"
+            },
+            {
+              "id": "sheet-id",
+              "name": "sheet_id",
+              "value": "YOUR_ENTRIES_SHEET_ID",
+              "type": "string"
+            },
+            {
+              "id": "sheet-tab",
+              "name": "sheet_tab",
+              "value": "Entries",
+              "type": "string"
+            },
+            {
+              "id": "output-root",
+              "name": "output_root",
+              "value": "/files",
+              "type": "string"
+            },
+            {
+              "id": "notify-to",
+              "name": "notify_to",
+              "value": "you@example.com",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: $json.model_classify,\n  max_tokens: 4000,\n  system: $json.classify_system,\n  messages: [{\n    role: 'user',\n    content: [\n      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: $json.pdfBase64 } },\n      { type: 'text', text: 'Split this pack into documents and classify each one. File name: ' + $json.fileName }\n    ]\n  }]\n}) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "name": "ClassifyPack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the model's JSON, sanity-check page coverage, emit one item per document.\nconst resp = $input.first().json;\nconst text = (resp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\\n');\nconst clean = text.replace(/```json|```/g, '').trim();\nlet parsed;\ntry { parsed = JSON.parse(clean); }\ncatch (e) { throw new Error('Classifier did not return valid JSON: ' + clean.slice(0, 300)); }\n\nconst docs = parsed.documents || [];\nconst pageCount = parsed.page_count || 0;\n\n// coverage check: every page exactly once\nconst seen = new Map();\nfor (const d of docs) for (const p of (d.pages || [])) seen.set(p, (seen.get(p) || 0) + 1);\nconst missing = [], dup = [];\nfor (let p = 1; p <= pageCount; p++) {\n  const n = seen.get(p) || 0;\n  if (n === 0) missing.push(p);\n  if (n > 1) dup.push(p);\n}\n\n// cost estimate (Sonnet 5 list price: $2 / $10 per MTok)\nconst u = resp.usage || {};\nconst costUsd = ((u.input_tokens || 0) * 2 + (u.output_tokens || 0) * 10) / 1e6;\n\nconst source = $('PreparePDF').first().json;\nreturn docs.map(d => ({\n  json: {\n    file_name: source.fileName,\n    doc_id: d.doc_id,\n    pages: d.pages,\n    page_range: d.pages.length > 1 ? `${d.pages[0]}-${d.pages[d.pages.length - 1]}` : String(d.pages[0]),\n    doc_type: d.doc_type,\n    vendor_or_bank: d.vendor_or_bank,\n    vendor_country: d.vendor_country,\n    language: d.language,\n    currency: d.currency,\n    scanned: !!d.scanned,\n    confidence: d.confidence,\n    notes: d.notes || '',\n    _pack: {\n      page_count: pageCount,\n      documents_found: docs.length,\n      coverage_ok: missing.length === 0 && dup.length === 0,\n      missing_pages: missing,\n      duplicate_pages: dup,\n      model: resp.model,\n      input_tokens: u.input_tokens,\n      output_tokens: u.output_tokens,\n      cost_usd: Number(costUsd.toFixed(4))\n    }\n  }\n}));"
+      },
+      "name": "ParseClassification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build one small PDF per classified document using pdf-lib (only that document's pages).\nconst { PDFDocument } = require('pdf-lib');\nconst srcB64 = $('PreparePDF').first().json.pdfBase64;\nconst src = await PDFDocument.load(Buffer.from(srcB64, 'base64'));\nconst out = [];\nfor (const item of $input.all()) {\n  const d = item.json;\n  const pdf = await PDFDocument.create();\n  const pages = await pdf.copyPages(src, d.pages.map(p => p - 1));\n  pages.forEach(p => pdf.addPage(p));\n  const bytes = Buffer.from(await pdf.save());\n  const fileName = `doc${String(d.doc_id).padStart(2, '0')}_p${d.page_range}_${d.doc_type}.pdf`;\n  out.push({\n    json: { ...d, doc_file_name: fileName, doc_pdf_kb: Math.round(bytes.length / 1024), doc_pdf_base64: bytes.toString('base64') },\n    binary: { doc_pdf: await this.helpers.prepareBinaryData(bytes, fileName, 'application/pdf') }\n  });\n}\nreturn out;"
+      },
+      "name": "SplitPDF",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: $('Config').first().json.model_extract,\n  max_tokens: 3000,\n  system: $('Config').first().json[({bank_statement: 'extract_bank_statement', receipt: 'extract_receipt'})[$json.doc_type] || 'extract_invoice'],\n  messages: [{\n    role: 'user',\n    content: [\n      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: $json.doc_pdf_base64 } },\n      { type: 'text', text: 'Extract the data from this ' + $json.doc_type.replace('_', ' ') + ' (pages ' + $json.page_range + ' of the original pack). Classifier hints: vendor=' + $json.vendor_or_bank + ', country=' + $json.vendor_country + ', currency=' + $json.currency + ', scanned=' + $json.scanned + '.' }\n    ]\n  }]\n}) }}",
+        "options": {
+          "timeout": 180000,
+          "batching": {
+            "batch": {
+              "batchSize": 3,
+              "batchInterval": 1000
+            }
+          }
+        }
+      },
+      "name": "ExtractFields",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Per item: parse the extraction JSON and merge with classification + cost.\nconst resp = $input.item.json;\nconst cls = $('SplitPDF').item.json;\nconst text = (resp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\\n');\nconst clean = text.replace(/```json|```/g, '').trim();\nlet ex;\ntry { ex = JSON.parse(clean); }\ncatch (e) { ex = { _parse_error: 'Model did not return valid JSON: ' + clean.slice(0, 200) }; }\nconst u = resp.usage || {};\nconst cost = ((u.input_tokens || 0) * 2 + (u.output_tokens || 0) * 10) / 1e6;\nconst { doc_pdf_base64, ...clsRest } = cls;\nreturn {\n  json: {\n    ...clsRest,\n    doc_type: ex.doc_type || cls.doc_type,\n    extracted: ex,\n    _extract: { model: resp.model, input_tokens: u.input_tokens, output_tokens: u.output_tokens, cost_usd: Number(cost.toFixed(4)) }\n  },\n  binary: $('SplitPDF').item.binary\n};"
+      },
+      "name": "ParseExtraction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Deterministic validation. The AI extracts, arithmetic decides.\nconst VAT_RATES = { LT:[0,9,21], LV:[0,5,12,21], EE:[0,9,22,24], PL:[0,5,8,23], DE:[0,7,19], AT:[0,10,13,20],\n  SE:[0,6,12,25], DK:[0,25], FI:[0,10,14,25.5], NO:[0,12,15,25], IE:[0,9,13.5,23], NL:[0,9,21], BE:[0,6,12,21],\n  FR:[0,5.5,10,20], ES:[0,4,10,21], IT:[0,4,5,10,22], GB:[0,5,20], US:[0] };\nconst EU = new Set(['LT','LV','EE','PL','DE','AT','SE','DK','FI','IE','NL','BE','FR','ES','IT','PT','CZ','SK','HU','RO','BG','HR','SI','GR','CY','MT','LU']);\nconst TOL = 0.02;\nconst num = v => (v === null || v === undefined || v === '') ? null : Number(v);\nconst near = (a, b, t = TOL) => a !== null && b !== null && Math.abs(a - b) <= t;\n\nconst d = $input.item.json;\nconst ex = d.extracted || {};\nconst reasons = [];   // -> needs_review\nconst tags = [];      // informational, not errors\nconst checks = {};\n\nif (ex._parse_error) reasons.push(ex._parse_error);\n\nconst isDoc = ['invoice', 'utility_bill', 'receipt', 'other'].includes(d.doc_type);\nif (isDoc && !ex._parse_error) {\n  const net = num(ex.net_total), vat = num(ex.vat_amount), gross = num(ex.gross_total), rate = num(ex.vat_rate_percent);\n  const country = (ex.vendor_country || d.vendor_country || '').toUpperCase();\n\n  // 1. line items sum to net (invoices) or gross (receipts, VAT-inclusive)\n  if (Array.isArray(ex.line_items) && ex.line_items.length) {\n    const sum = ex.line_items.reduce((s, li) => s + (num(li.amount) || 0), 0);\n    checks.line_items_sum = Number(sum.toFixed(2));\n    if (!near(sum, d.doc_type === 'receipt' ? gross : net) && !near(sum, gross)) reasons.push(`line items sum ${sum.toFixed(2)} ≠ ${d.doc_type === 'receipt' ? 'gross ' + gross : 'net ' + net}`);\n  }\n  // 2. net + VAT = gross\n  checks.net_plus_vat = net !== null && vat !== null ? Number((net + vat).toFixed(2)) : null;\n  if (!near(checks.net_plus_vat, gross)) reasons.push(`net ${net} + VAT ${vat} = ${checks.net_plus_vat} ≠ gross ${gross}`);\n  // 3. VAT amount matches rate\n  if (rate !== null && net !== null) {\n    checks.expected_vat = Number((net * rate / 100).toFixed(2));\n    if (!near(checks.expected_vat, vat)) reasons.push(`VAT ${vat} ≠ ${rate}% of ${net} (= ${checks.expected_vat})`);\n  }\n  // 4. rate plausible for the country\n  if (rate !== null && country && VAT_RATES[country] && !VAT_RATES[country].includes(rate)) {\n    reasons.push(`VAT rate ${rate}% is not a ${country} rate (${VAT_RATES[country].join('/')}%)`);\n  }\n  // 5. 0% from an EU vendor needs a reverse-charge clause\n  if (rate === 0 && EU.has(country) && country !== 'LT' && !ex.reverse_charge) {\n    reasons.push(`0% VAT from EU vendor (${country}) without reverse-charge clause`);\n  }\n  if (ex.reverse_charge) tags.push('reverse charge — account for VAT locally (VAT return)');\n  if (country === 'US') tags.push('non-EU vendor — no VAT, check import VAT rules');\n  if ((ex.currency || d.currency) && (ex.currency || d.currency) !== 'EUR') tags.push(`foreign currency ${ex.currency || d.currency} — FX left to accountant`);\n  // 6. identifiers & dates\n  const dateStr = ex.invoice_date || ex.date;\n  const dt = dateStr ? new Date(dateStr) : null;\n  if (!dt || isNaN(dt)) reasons.push('date missing or unparseable');\n  else if (dt > new Date()) reasons.push(`date ${dateStr} is in the future`);\n  if (d.doc_type !== 'receipt' && !ex.invoice_number) reasons.push('invoice number missing');\n  if (!ex.vendor_name) reasons.push('vendor name missing');\n}\n\nif (d.doc_type === 'bank_statement' && !ex._parse_error) {\n  const open = num(ex.opening_balance), close = num(ex.closing_balance);\n  const tx = Array.isArray(ex.transactions) ? ex.transactions : [];\n  const sum = tx.reduce((s, t) => s + (num(t.amount) || 0), 0);\n  checks.transaction_count = tx.length;\n  checks.opening_plus_transactions = open !== null ? Number((open + sum).toFixed(2)) : null;\n  if (!near(checks.opening_plus_transactions, close)) reasons.push(`opening ${open} + transactions ${sum.toFixed(2)} ≠ closing ${close}`);\n  if (!tx.length) reasons.push('no transactions extracted');\n  tags.push('bank statement — reconcile against invoices in this pack');\n}\n\n// scanned source: informational unless the model itself flagged poor OCR\nif (d.scanned) tags.push('scanned source');\nif (ex.ocr_quality === 'poor') reasons.push('model reported poor OCR quality — verify digits');\n\nconst status = reasons.length ? 'needs_review' : 'pass';\nreturn { json: { ...d, status, review_reasons: reasons, tags, checks }, binary: $input.item.binary };"
+      },
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rename + file each document PDF on disk, and build the flat sheet row.\nconst fs = require('fs');\nconst path = require('path');\nconst cfg = $('Config').first().json;\nconst root = cfg.output_root || '/files';\nconst runId = new Date().toISOString().slice(0, 19).replace('T', ' ');\nconst slug = s => (s || 'unknown').toString().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n  .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 40);\n\nconst out = [];\nfor (const item of $input.all()) {\n  const d = item.json, ex = d.extracted || {};\n  const date = ex.invoice_date || ex.date || ex.period_to || 'undated';\n  const number = ex.invoice_number || ex.receipt_number || (ex.period_from ? `${ex.period_from}_${ex.period_to}` : null) || `doc${d.doc_id}`;\n  const vendor = ex.vendor_name || ex.bank_name || d.vendor_or_bank;\n  const folder = d.status === 'pass' ? path.join(root, 'sorted', d.doc_type) : path.join(root, 'needs-review');\n  const fileName = `${date}_${slug(vendor)}_${slug(number)}.pdf`;\n  fs.mkdirSync(folder, { recursive: true });\n  const buf = await this.helpers.getBinaryDataBuffer($input.all().indexOf(item), 'doc_pdf');\n  fs.writeFileSync(path.join(folder, fileName), buf);\n\n  out.push({ json: {\n    run_id: runId,\n    date,\n    doc_type: d.doc_type,\n    vendor,\n    country: ex.vendor_country || d.vendor_country || '',\n    number,\n    currency: ex.currency || d.currency || '',\n    net: ex.net_total ?? ex.opening_balance ?? '',\n    vat: ex.vat_amount ?? '',\n    gross: ex.gross_total ?? ex.closing_balance ?? '',\n    category: ex.suggested_expense_category || (d.doc_type === 'bank_statement' ? 'Bank' : ''),\n    status: d.status,\n    review_reasons: (d.review_reasons || []).join(' | '),\n    tags: (d.tags || []).join(' | '),\n    pages: d.page_range,\n    scanned: d.scanned ? 'yes' : 'no',\n    file_path: path.join(folder, fileName).replace(root, ''),\n    // carried for Summary\n    _pack: d._pack, _extract: d._extract, doc_id: d.doc_id, file_name: d.file_name, vendor_or_bank: d.vendor_or_bank, page_range: d.page_range, extracted: ex\n  }});\n}\nreturn out;"
+      },
+      "name": "FileDocuments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.sheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Config').first().json.sheet_tab }}"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "name": "AppendSheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One summary item for the run (demo talking points + the email).\nconst items = $('FileDocuments').all().map(i => i.json);\nconst pack = items[0]?._pack || {};\nconst byCurrency = {};\nlet extractCost = 0;\nfor (const d of items) {\n  extractCost += d._extract?.cost_usd || 0;\n  const ex = d.extracted || {};\n  if (['invoice','utility_bill','receipt','other'].includes(d.doc_type) && ex.gross_total != null) {\n    const c = ex.currency || d.currency || '?';\n    byCurrency[c] = Number(((byCurrency[c] || 0) + Number(ex.gross_total)).toFixed(2));\n  }\n}\nconst review = items.filter(d => d.status === 'needs_review').map(d => ({ doc_id: d.doc_id, pages: d.page_range, vendor: d.vendor_or_bank, reasons: d.review_reasons }));\nconst totalCost = Number(((pack.cost_usd || 0) + extractCost).toFixed(4));\nconst runId = items[0]?.run_id;\nreturn [{ json: {\n  run_id: runId,\n  file_name: items[0]?.file_name,\n  pages: pack.page_count, documents: items.length,\n  auto_pass: items.length - review.length, needs_review: review.length,\n  review_items: review,\n  gross_totals_by_currency: byCurrency,\n  types: items.reduce((m, d) => { m[d.doc_type] = (m[d.doc_type] || 0) + 1; return m; }, {}),\n  cost_usd: { classify: pack.cost_usd, extract: Number(extractCost.toFixed(4)), total: totalCost },\n  one_liner: `Processed ${items[0]?.file_name}: ${items.length} documents — ${items.length - review.length} auto-validated, ${review.length} flagged for review. AI cost $${totalCost}.`\n}}];"
+      },
+      "name": "Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Write the run summary next to the sorted folders (and build the email text).\nconst fs = require('fs');\nconst path = require('path');\nconst cfg = $('Config').first().json;\nconst s = $input.first().json;\nconst lines = [\n  s.one_liner, '',\n  `Documents: ${s.documents} (${Object.entries(s.types).map(([k, v]) => `${v} ${k}`).join(', ')})`,\n  `Auto-validated: ${s.auto_pass}   Needs review: ${s.needs_review}`,\n  `Totals: ${Object.entries(s.gross_totals_by_currency).map(([c, v]) => `${v.toFixed(2)} ${c}`).join(' · ')}`,\n  '', 'Flagged for review:',\n  ...(s.review_items.length ? s.review_items.map(r => `  • pages ${r.pages} — ${r.vendor}: ${Array.isArray(r.reasons) ? r.reasons.join('; ') : r.reasons}`) : ['  (none)']),\n  '', `Files: ${cfg.output_root}/sorted/<type>/ and ${cfg.output_root}/needs-review/`,\n  `AI cost this run: $${s.cost_usd.total}`\n];\nconst text = lines.join('\\n');\nfs.mkdirSync(cfg.output_root, { recursive: true });\nfs.writeFileSync(path.join(cfg.output_root, 'last-run-summary.txt'), text);\nfs.writeFileSync(path.join(cfg.output_root, 'last-run-summary.json'), JSON.stringify(s, null, 2));\nreturn [{ json: { ...s, email_subject: `Processed ${s.file_name}: ${s.auto_pass} filed, ${s.needs_review} to review`, email_text: text } }];"
+      },
+      "name": "WriteSummary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Config').first().json.notify_to }}",
+        "subject": "={{ $json.email_subject }}",
+        "emailType": "text",
+        "message": "={{ $json.email_text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "name": "SendSummaryEmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        3120,
+        0
+      ],
+      "disabled": true
+    }
+  ],
+  "connections": {
+    "TriggerFormUpload": {
+      "main": [
+        [
+          {
+            "node": "PreparePDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PreparePDF": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "ClassifyPack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ClassifyPack": {
+      "main": [
+        [
+          {
+            "node": "ParseClassification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ParseClassification": {
+      "main": [
+        [
+          {
+            "node": "SplitPDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SplitPDF": {
+      "main": [
+        [
+          {
+            "node": "ExtractFields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ExtractFields": {
+      "main": [
+        [
+          {
+            "node": "ParseExtraction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ParseExtraction": {
+      "main": [
+        [
+          {
+            "node": "Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate": {
+      "main": [
+        [
+          {
+            "node": "FileDocuments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FileDocuments": {
+      "main": [
+        [
+          {
+            "node": "AppendSheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AppendSheet": {
+      "main": [
+        [
+          {
+            "node": "Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summary": {
+      "main": [
+        [
+          {
+            "node": "WriteSummary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WriteSummary": {
+      "main": [
+        [
+          {
+            "node": "SendSummaryEmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

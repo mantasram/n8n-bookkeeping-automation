@@ -1,0 +1,917 @@
+{
+  "name": "Demo 2 - Client Document Chase",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Demo 2 — Client document chase\n**Story:** every month the team plays inbox-tennis chasing clients for bank statements and receipts. This runs the chase automatically — polite, personalised, escalating — and stops the moment documents arrive.\n\n**Three branches, one workflow:** ① daily chase (08:00) → ② client upload form marks documents received → ③ Monday owner summary. All three pass through **Config** and a **Switch** on which trigger fired.\n\n**Data:** Google Sheet *Demo2 - Clients* (5 fictional clients in mixed states) + *Demo2 - ChaseLog*. `today_override` in Config is set to 2026-07-27 so the test data behaves exactly as `expected_output_v2.json` describes; blank it for real use. `period_month_offset` 0 = chasing this month's documents, -1 = last month's.\n\n**Run for the demo:** TriggerManual → Execute workflow. Then open the upload form as 'Kavos Namai', upload a file, re-run: Kavos Namai gets no second email.",
+        "height": 300,
+        "width": 980,
+        "color": 4
+      },
+      "name": "Note - Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -520
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### The idempotency rules (say these in the demo)\n1. Never email a **completed** client.\n2. Never send the **same stage twice** (`last_stage` on the row).\n3. Hard cap of **3 client-facing emails**; after that the accountant gets it, not the client.\n4. Every send is **logged** with timestamp.\n\nStages by days since first request: 0 → request · ≥4 → reminder 1 · ≥8 → reminder 2 (deadline = today+3) · ≥12 → **escalate** to accountant.\n\nEmails are **templates** (EN + LT, picked by the client's `language`), not free generation — a chase email must never hallucinate a deadline. No AI call in this workflow at all.",
+        "height": 330,
+        "width": 620,
+        "color": 2
+      },
+      "name": "Note - Rules",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Demo mode\nClient emails in the sheet are `.example` addresses. `demo_redirect_to` in Config sends every email to you instead, with `[DEMO → original]` in the subject, so the inbox shot works. Blank it in production.\n\nThe upload form URL is the production path `/form/demo2-client-upload` — the workflow must be **Active** for clients to reach it (test mode works only while you watch).",
+        "height": 330,
+        "width": 520,
+        "color": 7
+      },
+      "name": "Note - Demo mode",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        600,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### ③ Monday summary\nOne plain-text table to the firm owner: who still owes what, days outstanding, who is escalated. *\"You'd get this every Monday\"* — this is the node that turns the demo into a retainer conversation.",
+        "height": 160,
+        "width": 620,
+        "color": 5
+      },
+      "name": "Note - Weekly",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### ② Intake\nClient opens the upload link, enters their client ID + what the document is, uploads. **MarkReceived** removes matching items from `docs_missing` (keyword match), sets `status: complete` when empty, sends a thank-you in their language, logs it. In production the file itself would be handed to Demo 1's pipeline.",
+        "height": 160,
+        "width": 620,
+        "color": 6
+      },
+      "name": "Note - Intake",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### ① Daily chase\n**ComputeChase** applies the rules and builds each email from the template. Only clients that need an email today come out. **SendChaseEmail** → **UpdateClientRow** (last_sent_date, last_stage, counter) → **AppendLog**.",
+        "height": 160,
+        "width": 620,
+        "color": 3
+      },
+      "name": "Note - Chase",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        -110
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "name": "TriggerDaily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -100
+      ]
+    },
+    {
+      "parameters": {},
+      "name": "TriggerManual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "path": "demo2-client-upload",
+        "formTitle": "Send us your documents",
+        "formDescription": "Upload the documents we asked for. Enter your client ID from the email.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Client ID",
+              "requiredField": true,
+              "placeholder": "e.g. C002"
+            },
+            {
+              "fieldLabel": "Which document is this?",
+              "fieldType": "textarea",
+              "requiredField": true,
+              "placeholder": "e.g. July bank statement"
+            },
+            {
+              "fieldLabel": "File",
+              "fieldType": "file",
+              "multipleFiles": true,
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "TriggerClientUpload",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 8,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      },
+      "name": "TriggerWeekly",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "source",
+              "value": "={{ $prevNode.name }}",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "clients_sheet_id",
+              "value": "YOUR_CLIENTS_SHEET_ID",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "clients_tab",
+              "value": "Clients",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "log_sheet_id",
+              "value": "YOUR_CHASELOG_SHEET_ID",
+              "type": "string"
+            },
+            {
+              "id": "c5",
+              "name": "log_tab",
+              "value": "ChaseLog",
+              "type": "string"
+            },
+            {
+              "id": "c6",
+              "name": "firm_name",
+              "value": "Demo Apskaita UAB",
+              "type": "string"
+            },
+            {
+              "id": "c7",
+              "name": "accountant_email",
+              "value": "you@example.com",
+              "type": "string"
+            },
+            {
+              "id": "c8",
+              "name": "demo_redirect_to",
+              "value": "you@example.com",
+              "type": "string"
+            },
+            {
+              "id": "c9",
+              "name": "upload_form_url",
+              "value": "https://YOUR-N8N-HOST/form/demo2-client-upload",
+              "type": "string"
+            },
+            {
+              "id": "c10",
+              "name": "today_override",
+              "value": "2026-07-27",
+              "type": "string"
+            },
+            {
+              "id": "c11",
+              "name": "max_client_emails",
+              "value": 3,
+              "type": "number"
+            },
+            {
+              "id": "c12",
+              "name": "period_month_offset",
+              "value": 0,
+              "type": "number"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.clients_sheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Config').first().json.clients_tab }}"
+        },
+        "options": {}
+      },
+      "name": "ReadClients",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        500,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r1",
+                    "leftValue": "={{ $('Config').first().json.source }}",
+                    "rightValue": "TriggerClientUpload",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "intake"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r2",
+                    "leftValue": "={{ $('Config').first().json.source }}",
+                    "rightValue": "TriggerWeekly",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "weekly"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "name": "RouteByTrigger",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        740,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decide who gets which email today. Templates, not free generation — a chase email must never invent a deadline.\nconst cfg = $('Config').first().json;\nconst today = cfg.today_override ? new Date(cfg.today_override + 'T12:00:00') : new Date();\nconst iso = d => d.toISOString().slice(0, 10);\nconst addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };\nconst MONTHS = {\n  en: ['January','February','March','April','May','June','July','August','September','October','November','December'],\n  lt: ['sausio','vasario','kovo','balandžio','gegužės','birželio','liepos','rugpjūčio','rugsėjo','spalio','lapkričio','gruodžio']\n};\nconst prev = new Date(today.getFullYear(), today.getMonth() + Number(cfg.period_month_offset || 0), 1);  // which month's books are being closed\nconst month = { en: MONTHS.en[prev.getMonth()], lt: MONTHS.lt[prev.getMonth()] };\n\nconst T = {\n  en: {\n    request: v => ({\n      subject: `Documents for ${v.month} bookkeeping — ${v.client}`,\n      body: `Hi ${v.first},\\n\\nTo close your ${v.month} books we still need: ${v.list}.\\n\\nYou can upload them here: ${v.link} — takes two minutes. Anything unclear, just reply to this email.\\n\\nThanks!\\n${v.firm}` }),\n    reminder_1: v => ({\n      subject: `Gentle reminder: ${v.month} documents — ${v.client}`,\n      body: `Hi ${v.first},\\n\\nA quick nudge — we're still missing: ${v.list}.\\n\\nUpload here whenever you have a moment: ${v.link}\\n\\nThanks!\\n${v.firm}` }),\n    reminder_2: v => ({\n      subject: `Deadline ${v.deadline}: ${v.month} documents — ${v.client}`,\n      body: `Hi ${v.first},\\n\\nWe need the following by ${v.deadline} to file your ${v.month} reports on time: ${v.list}.\\n\\nUpload here: ${v.link}\\n\\nIf something is delayed, reply and let us know — we'll work around it.\\n\\n${v.firm}` }),\n  },\n  lt: {\n    request: v => ({\n      subject: `Dokumentai ${v.month} mėn. apskaitai — ${v.client}`,\n      body: `Sveiki, ${v.first},\\n\\nkad užbaigtume ${v.month} mėn. apskaitą, dar trūksta: ${v.list}.\\n\\nĮkelti galite čia: ${v.link} — užtruks porą minučių. Jei kiltų klausimų, tiesiog atsakykite į šį laišką.\\n\\nAčiū!\\n${v.firm}` }),\n    reminder_1: v => ({\n      subject: `Priminimas: ${v.month} mėn. dokumentai — ${v.client}`,\n      body: `Sveiki, ${v.first},\\n\\ntrumpas priminimas — vis dar trūksta: ${v.list}.\\n\\nĮkelkite, kai turėsite minutę: ${v.link}\\n\\nAčiū!\\n${v.firm}` }),\n    reminder_2: v => ({\n      subject: `Terminas ${v.deadline}: ${v.month} mėn. dokumentai — ${v.client}`,\n      body: `Sveiki, ${v.first},\\n\\nkad laiku pateiktume ${v.month} mėn. ataskaitas, iki ${v.deadline} mums reikia: ${v.list}.\\n\\nĮkelti galite čia: ${v.link}\\n\\nJei kažkas vėluoja — atsakykite ir susitarsime.\\n\\n${v.firm}` }),\n  }\n};\n\nconst ORDER = ['request', 'reminder_1', 'reminder_2', 'escalate'];\nconst out = [];\nfor (const item of $input.all()) {\n  const c = item.json;\n  if (!c.client_id) continue;\n  const missing = String(c.docs_missing || '').split(';').map(s => s.trim()).filter(Boolean);\n  if (String(c.status || '').toLowerCase() === 'complete' || !missing.length) continue;   // rule 1: never email a completed client\n\n  const lang = String(c.language || 'en').toLowerCase() === 'lt' ? 'lt' : 'en';\n  const first = c.first_request_date ? new Date(c.first_request_date + 'T12:00:00') : null;\n  const days = first ? Math.floor((today - first) / 86400000) : 0;\n  let stage = !first ? 'request' : days >= 12 ? 'escalate' : days >= 8 ? 'reminder_2' : days >= 4 ? 'reminder_1' : 'request';\n  const last = String(c.last_stage || '');\n  if (last && ORDER.indexOf(stage) <= ORDER.indexOf(last)) continue;                    // rule 2: never send the same stage twice\n  const sent = Number(c.client_emails_sent || 0);\n  if (stage !== 'escalate' && sent >= Number(cfg.max_client_emails || 3)) stage = 'escalate'; // rule 3: hard cap on client-facing emails\n\n  const vars = { first: c.contact_first_name, client: c.client_name, month: month[lang], list: missing.join(', '),\n                 link: cfg.upload_form_url, firm: cfg.firm_name, deadline: iso(addDays(today, 3)), days };\n  let to, subject, body;\n  if (stage === 'escalate') {\n    to = cfg.accountant_email;\n    subject = `[Action needed] ${c.client_name} — ${days} days without documents`;\n    body = [\n      `Client: ${c.client_name} — ${c.contact_first_name}, ${c.email}`,\n      `Missing: ${missing.join(', ')}`,\n      `First request: ${c.first_request_date}   Last email: ${c.last_sent_date} (${last})`,\n      `Client emails sent: ${sent} — automated chasing stopped.`,\n      '',\n      'Next step: a phone call. The row stays open until documents arrive via the upload link:',\n      cfg.upload_form_url\n    ].join('\\n');\n  } else {\n    to = c.email;\n    ({ subject, body } = T[lang][stage](vars));\n  }\n  const redirect = (cfg.demo_redirect_to || '').trim();\n  const redirected = redirect && redirect !== to;\n  out.push({ json: {\n    client_id: c.client_id, client_name: c.client_name, stage, days_since_request: days, language: lang,\n    recipient_original: to,\n    to: redirected ? redirect : to,\n    subject: redirected ? `[DEMO → ${to}] ${subject}` : subject,\n    body,\n    first_request_date: c.first_request_date || iso(today),\n    last_sent_date: iso(today),\n    last_stage: stage,\n    client_emails_sent: stage === 'escalate' ? sent : sent + 1,\n    docs_missing: missing.join('; '),\n    timestamp: new Date().toISOString()\n  }});\n}\nreturn out;"
+      },
+      "name": "ComputeChase",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.body }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "name": "SendChaseEmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1440,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.clients_sheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Config').first().json.clients_tab }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "client_id": "={{ $('ComputeChase').item.json.client_id }}",
+            "first_request_date": "={{ $('ComputeChase').item.json.first_request_date }}",
+            "last_sent_date": "={{ $('ComputeChase').item.json.last_sent_date }}",
+            "last_stage": "={{ $('ComputeChase').item.json.last_stage }}",
+            "client_emails_sent": "={{ $('ComputeChase').item.json.client_emails_sent }}"
+          },
+          "matchingColumns": [
+            "client_id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "name": "UpdateClientRow",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1680,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.log_sheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Config').first().json.log_tab }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $('ComputeChase').item.json.timestamp }}",
+            "client_id": "={{ $('ComputeChase').item.json.client_id }}",
+            "client_name": "={{ $('ComputeChase').item.json.client_name }}",
+            "event": "email_sent",
+            "stage": "={{ $('ComputeChase').item.json.stage }}",
+            "recipient": "={{ $('ComputeChase').item.json.recipient_original }}",
+            "subject": "={{ $('ComputeChase').item.json.subject }}",
+            "details": "={{ $('ComputeChase').item.json.days_since_request + ' days since first request; missing: ' + $('ComputeChase').item.json.docs_missing }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "client_id",
+              "displayName": "client_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "client_name",
+              "displayName": "client_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "event",
+              "displayName": "event",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "recipient",
+              "displayName": "recipient",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "details",
+              "displayName": "details",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "AppendLog",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1920,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// A client uploaded something: shrink docs_missing, close the row when nothing is left, thank them.\nconst cfg = $('Config').first().json;\nconst f = $('TriggerClientUpload').first().json;\nconst bin = $('TriggerClientUpload').first().binary || {};\nconst rows = $input.all().map(i => i.json);\nconst id = String(f['Client ID'] || '').trim().toUpperCase();\nconst c = rows.find(r => String(r.client_id || '').toUpperCase() === id);\nif (!c) throw new Error(`Unknown client id \"${id}\" — check the Clients sheet`);\n\nconst desc = String(f['Which document is this?'] || '').toLowerCase();\nconst missing = String(c.docs_missing || '').split(';').map(s => s.trim()).filter(Boolean);\nconst words = desc.split(/[^a-z0-9ąčęėįšųūž]+/i).filter(w => w.length > 3);\nconst received = missing.filter(m => words.some(w => m.toLowerCase().includes(w)));\nconst remaining = missing.filter(m => !received.includes(m));\nconst status = remaining.length ? 'active' : 'complete';\nconst lang = String(c.language || 'en').toLowerCase() === 'lt' ? 'lt' : 'en';\nconst files = Object.values(bin).map(b => b.fileName).join(', ') || '(no file)';\n\nconst subject = lang === 'lt' ? `Gavome jūsų dokumentus — ${c.client_name}` : `Documents received — ${c.client_name}`;\nconst body = lang === 'lt'\n  ? `Sveiki, ${c.contact_first_name},\\n\\ngavome: ${received.length ? received.join(', ') : desc}.\\n\\n${remaining.length ? 'Dar trūksta: ' + remaining.join(', ') + '.\\nĮkelti: ' + cfg.upload_form_url : 'Visi šio mėnesio dokumentai gauti — ačiū, daugiau nieko nereikia.'}\\n\\n${cfg.firm_name}`\n  : `Hi ${c.contact_first_name},\\n\\nReceived: ${received.length ? received.join(', ') : desc}.\\n\\n${remaining.length ? 'Still missing: ' + remaining.join(', ') + '.\\nUpload: ' + cfg.upload_form_url : \"That's everything for this month — thank you, nothing more needed.\"}\\n\\n${cfg.firm_name}`;\n\nconst redirect = (cfg.demo_redirect_to || '').trim();\nreturn [{ json: {\n  client_id: c.client_id, client_name: c.client_name, language: lang,\n  received: received.join('; ') || desc, docs_missing: remaining.join('; '), status,\n  recipient_original: c.email, to: redirect || c.email,\n  subject: redirect ? `[DEMO → ${c.email}] ${subject}` : subject, body,\n  files, timestamp: new Date().toISOString()\n}}];"
+      },
+      "name": "MarkReceived",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.clients_sheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Config').first().json.clients_tab }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "client_id": "={{ $json.client_id }}",
+            "docs_missing": "={{ $json.docs_missing }}",
+            "status": "={{ $json.status }}"
+          },
+          "matchingColumns": [
+            "client_id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "name": "UpdateClientIntake",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1440,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('MarkReceived').item.json.to }}",
+        "subject": "={{ $('MarkReceived').item.json.subject }}",
+        "emailType": "text",
+        "message": "={{ $('MarkReceived').item.json.body }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "name": "SendThankYou",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1680,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config').first().json.log_sheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Config').first().json.log_tab }}"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $('MarkReceived').item.json.timestamp }}",
+            "client_id": "={{ $('MarkReceived').item.json.client_id }}",
+            "client_name": "={{ $('MarkReceived').item.json.client_name }}",
+            "event": "documents_received",
+            "stage": "={{ $('MarkReceived').item.json.status }}",
+            "recipient": "={{ $('MarkReceived').item.json.recipient_original }}",
+            "subject": "={{ $('MarkReceived').item.json.subject }}",
+            "details": "={{ 'received: ' + $('MarkReceived').item.json.received + ' (' + $('MarkReceived').item.json.files + '); still missing: ' + ($('MarkReceived').item.json.docs_missing || 'nothing') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "client_id",
+              "displayName": "client_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "client_name",
+              "displayName": "client_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "event",
+              "displayName": "event",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "recipient",
+              "displayName": "recipient",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "details",
+              "displayName": "details",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "AppendLogIntake",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1920,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Monday morning: who is still missing what, at which stage, who is escalated.\nconst cfg = $('Config').first().json;\nconst today = cfg.today_override ? new Date(cfg.today_override + 'T12:00:00') : new Date();\nconst rows = $input.all().map(i => i.json).filter(r => r.client_id);\nconst open = rows.filter(r => String(r.status).toLowerCase() !== 'complete' && String(r.docs_missing || '').trim());\nconst days = r => r.first_request_date ? Math.floor((today - new Date(r.first_request_date + 'T12:00:00')) / 86400000) : 0;\nconst pad = (s, n) => String(s ?? '').padEnd(n);\nconst lines = [\n  `Document chase — weekly status (${today.toISOString().slice(0, 10)})`, '',\n  `Clients: ${rows.length}   Complete: ${rows.length - open.length}   Still open: ${open.length}`, '',\n  pad('Client', 24) + pad('Stage', 12) + pad('Days', 6) + 'Missing',\n  '-'.repeat(70),\n  ...open.sort((a, b) => days(b) - days(a)).map(r => pad(r.client_name, 24) + pad(r.last_stage || 'not started', 12) + pad(days(r), 6) + r.docs_missing),\n  '', 'Escalated (needs a call): ' + (open.filter(r => r.last_stage === 'escalate').map(r => r.client_name).join(', ') || 'none'),\n  '', `Upload link for clients: ${cfg.upload_form_url}`\n];\nreturn [{ json: { to: cfg.accountant_email, subject: `Weekly document chase — ${open.length} clients still open`, body: lines.join('\\n') } }];"
+      },
+      "name": "BuildOwnerSummary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "=<pre style=\"font-family:Menlo,Consolas,monospace;font-size:13px\">{{ $json.body }}</pre>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "name": "SendOwnerSummary",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1440,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "TriggerDaily": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TriggerManual": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TriggerClientUpload": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TriggerWeekly": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "ReadClients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ReadClients": {
+      "main": [
+        [
+          {
+            "node": "RouteByTrigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RouteByTrigger": {
+      "main": [
+        [
+          {
+            "node": "MarkReceived",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "BuildOwnerSummary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ComputeChase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ComputeChase": {
+      "main": [
+        [
+          {
+            "node": "SendChaseEmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SendChaseEmail": {
+      "main": [
+        [
+          {
+            "node": "UpdateClientRow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "UpdateClientRow": {
+      "main": [
+        [
+          {
+            "node": "AppendLog",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MarkReceived": {
+      "main": [
+        [
+          {
+            "node": "UpdateClientIntake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "UpdateClientIntake": {
+      "main": [
+        [
+          {
+            "node": "SendThankYou",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SendThankYou": {
+      "main": [
+        [
+          {
+            "node": "AppendLogIntake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BuildOwnerSummary": {
+      "main": [
+        [
+          {
+            "node": "SendOwnerSummary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

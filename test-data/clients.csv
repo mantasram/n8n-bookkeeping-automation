@@ -1,0 +1,6 @@
+client_id,client_name,contact_first_name,email,language,docs_missing,status,first_request_date,last_sent_date,last_stage,notes
+C001,Ledo Kalnas UAB,Tomas,tomas@ledokalnas.example,lt,,complete,2026-07-10,2026-07-10,request,All July documents received — must get NO email
+C002,Kavos Namai MB,Greta,greta@kavosnamai.example,lt,July bank statement; fuel receipts,active,,,,New this cycle — should get first REQUEST
+C003,Green Harbor OÜ,Martin,martin@greenharbor.example,en,June invoices (sales); July bank statement,active,2026-07-22,2026-07-22,request,4+ days since request — should get REMINDER 1
+C004,Šiaurės Prekyba UAB,Rasa,rasa@siauresprekyba.example,lt,July bank statement,active,2026-07-18,2026-07-22,reminder_1,8+ days since first request — should get REMINDER 2 with deadline
+C005,Žalias Miestas VšĮ,Jonas,jonas@zaliasmiestas.example,lt,Q2 payroll summaries; June+July bank statements,active,2026-07-14,2026-07-23,reminder_2,"12+ days — must ESCALATE to accountant, no client email"

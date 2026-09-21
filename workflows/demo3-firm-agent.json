@@ -1,0 +1,274 @@
+{
+  "name": "Demo 3 - Firm Assistant (AI agent)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Demo 3 — Ask the firm's data\n**Story:** an accountant asks a question in plain language; the assistant answers from the firm's *live* data — the documents Demo 1 processed, the clients Demo 2 is chasing, the chase log, and the filing calendar. Nothing is answered from memory; every fact comes from a tool call.\n\n**Try in the chat:**\n- *Which July documents need review, and why?*\n- *Did Kavos Namai send their bank statement yet?*\n- *How much did we receive from Estonian and German vendors, and is any VAT wrong?*\n- *Kas iš klientų dar neatsiuntė dokumentų ir kada VAT terminas?* (Lithuanian works)\n- *Show me every email we sent Žalias Miestas.*\n\n**Demo line:** \"Same data your team already has — the assistant just reads it faster and never guesses. Watch the execution log: each answer shows exactly which sheet it read.\"",
+        "height": 340,
+        "width": 1000,
+        "color": 4
+      },
+      "name": "Note - Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -560
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### How it works\n**FirmAgent** (AI Agent node) + **Claude Sonnet 5** as the model + **Memory** (last 10 turns, so follow-up questions work).\n\nFour tools: three **Google Sheets Tool** nodes (read-only — the agent cannot write anything) and one **Code Tool** with the Lithuanian filing calendar computed from today's date.\n\nThe agent picks tools by their descriptions; the system prompt forces tool use and forbids invented numbers. Open **FirmAgent** after a question to see the tool calls and their raw results.",
+        "height": 300,
+        "width": 620,
+        "color": 6
+      },
+      "name": "Note - How",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### In production\n- Replace the sheets with the firm's real sources: accounting system export (Rivilė / Finvalda / Apskaita5), the Demo 1 output, the chase table.\n- Chat Trigger → Slack/Teams/Telegram trigger, or a webhook from an internal page.\n- Tools stay read-only; write actions (e.g. \"send Kavos Namai a reminder\") would be separate, explicit tools with confirmation.\n- Model calls carry only the rows the tool returned — no client files, no credentials. EU hosting, DPA, no training on the data.",
+        "height": 300,
+        "width": 520,
+        "color": 7
+      },
+      "name": "Note - Production",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        600,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "TriggerChat",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "=You are the internal assistant of Demo Apskaita UAB, a small bookkeeping firm in Vilnius. You answer questions from the firm's accountants (never from clients) about the firm's own data. Today is {{ $now.toFormat('yyyy-LL-dd') }}.\n\nYou have tools that read the firm's live data:\n- get_documents: every document processed by the intake pipeline (invoices, receipts, bank statements, utility bills) with vendor, number, date, amounts, VAT, currency, status (pass / needs_review) and the validator's review_reasons.\n- get_clients: every client, which documents they still owe, chase stage, days outstanding, and whether the case is escalated.\n- get_chase_log: every email the chase workflow has sent, with timestamps.\n- get_deadlines: Lithuanian filing deadlines (VAT, i.SAF, GPM, SODRA) relative to today.\n\nRules:\n- Always use the tools; never answer about documents, clients or deadlines from memory.\n- Be concise and concrete: name the document number, vendor, amount and reason. Use bullet points for lists, a short sentence for single facts.\n- If the data does not contain the answer, say so plainly and suggest what to check. Never invent a number, a date or a document.\n- Amounts: keep the document's currency; do not convert.\n- Reply in the same language as the question: English question → English answer; Lithuanian question → Lithuanian answer. Never switch languages on your own.\n- Do not mention tool names or internal mechanics to the user."
+        }
+      },
+      "name": "FirmAgent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
+      "position": [
+        300,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-5",
+          "cachedResultName": "claude-sonnet-5"
+        },
+        "options": {}
+      },
+      "name": "ClaudeModel",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        200,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 10
+      },
+      "name": "Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        400,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_ENTRIES_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Entries"
+        },
+        "options": {},
+        "descriptionType": "manual",
+        "toolDescription": "Returns every document processed by the intake pipeline (invoices, receipts, bank statements, utility bills): date, doc_type, vendor, country, number, currency, net, vat, gross, category, status (pass or needs_review), review_reasons, tags, file_path. Use for any question about documents, vendors, amounts, VAT problems or what needs review."
+      },
+      "name": "get_documents",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        620,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_CLIENTS_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Clients"
+        },
+        "options": {},
+        "descriptionType": "manual",
+        "toolDescription": "Returns every client of the firm with: client_name, contact, email, language, docs_missing (what they still owe; empty = complete), status, first_request_date, last_sent_date, last_stage (request / reminder_1 / reminder_2 / escalate), client_emails_sent. Use for any question about which clients still owe documents, chase progress, or escalations."
+      },
+      "name": "get_clients",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        860,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_CHASELOG_SHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "ChaseLog"
+        },
+        "options": {},
+        "descriptionType": "manual",
+        "toolDescription": "Returns the log of every email the document-chase workflow sent or every upload received: timestamp, client_id, client_name, event (email_sent / documents_received), stage, recipient, subject, details. Use for questions like 'what did we send client X and when'."
+      },
+      "name": "get_chase_log",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        1100,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "name": "get_deadlines",
+        "description": "Returns Lithuanian recurring filing deadlines (VAT FR0600, i.SAF, GPM313, SODRA, PLN204) with the next due date and days left, computed from today. Use for any question about when something must be filed or paid.",
+        "jsCode": "// Lithuanian recurring filing deadlines, computed relative to today. Static rules, no AI.\nconst today = new Date();\nconst y = today.getFullYear(), m = today.getMonth();\nconst iso = d => d.toISOString().slice(0, 10);\nconst nextOnDay = (day) => { let d = new Date(y, m, day); if (d < today) d = new Date(y, m + 1, day); return d; };\nconst items = [\n  { filing: 'VAT return (FR0600) + VAT payment', rule: 'by the 25th of the following month', next: nextOnDay(25) },\n  { filing: 'i.SAF invoice registers (VMI)', rule: 'by the 20th of the following month', next: nextOnDay(20) },\n  { filing: 'GPM313 monthly income-tax return', rule: 'by the 15th of the following month', next: nextOnDay(15) },\n  { filing: 'SODRA SAM report + contributions', rule: 'by the 15th of the following month', next: nextOnDay(15) },\n  { filing: 'PLN204 corporate income tax (annual)', rule: 'by 15 June for the previous year', next: (() => { let d = new Date(y, 5, 15); if (d < today) d = new Date(y + 1, 5, 15); return d; })() },\n];\nconst days = d => Math.ceil((d - today) / 86400000);\nreturn JSON.stringify({ today: iso(today), deadlines: items.map(i => ({ ...i, next: iso(i.next), days_left: days(i.next) })) }, null, 2);"
+      },
+      "name": "get_deadlines",
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.2,
+      "position": [
+        1340,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "TriggerChat": {
+      "main": [
+        [
+          {
+            "node": "FirmAgent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ClaudeModel": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "FirmAgent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "FirmAgent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_documents": {
+      "ai_tool": [
+        [
+          {
+            "node": "FirmAgent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_clients": {
+      "ai_tool": [
+        [
+          {
+            "node": "FirmAgent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_chase_log": {
+      "ai_tool": [
+        [
+          {
+            "node": "FirmAgent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get_deadlines": {
+      "ai_tool": [
+        [
+          {
+            "node": "FirmAgent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
