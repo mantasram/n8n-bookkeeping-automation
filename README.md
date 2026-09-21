@@ -10,6 +10,8 @@ Three end-to-end n8n workflows for the document-heavy back office of a small acc
 
 Demo videos: _coming soon_ — links will be added here. Author: [Mantas Ramoška](https://github.com/mantasram).
 
+![Demo 1 — the full intake workflow in n8n](docs/screenshots/demo1-workflow.png)
+
 ---
 
 ## 1. Document intake — "one messy PDF in, sorted books out"
@@ -40,6 +42,8 @@ Clients upload through an n8n form (`TriggerClientUpload`); the record updates i
 
 Test client list: [`test-data/clients.csv`](test-data/clients.csv) (five synthetic clients, each designed to trigger one rule).
 
+![Demo 2 — the three branches: daily chase, client upload form, Monday summary](docs/screenshots/demo2-workflow.png)
+
 ## 3. Firm assistant — "ask the firm's data"
 
 An n8n AI Agent (Claude Sonnet, window memory) with four **read-only** tools: the intake entries sheet, the client list, the chase log and a Code tool with Lithuanian filing deadlines. Example questions it answers by reading the data, not guessing:
@@ -49,6 +53,8 @@ An n8n AI Agent (Claude Sonnet, window memory) with four **read-only** tools: th
 - *Kada artimiausias PVM terminas ir kas iš klientų dar neatsiuntė dokumentų?* (LT in → LT out, two tools in one answer)
 
 In production the tools would read the firm's accounting system instead of Google Sheets. The agent is never given a write tool.
+
+![Demo 3 — the agent with its four read-only tools](docs/screenshots/demo3-agent.png)
 
 ---
 
