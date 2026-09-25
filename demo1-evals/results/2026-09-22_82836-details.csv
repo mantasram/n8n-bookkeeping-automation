@@ -103,7 +103,7 @@ pages,document,field,kind,expected,actual,match,note
 12,Circle D Demo Degalinė,vat_rate_percent,hard,21.0,21,True,
 12,Circle D Demo Degalinė,vat_amount,hard,10.78,10.78,True,
 12,Circle D Demo Degalinė,gross_total,hard,62.14,62.14,True,
-12,Circle D Demo Degalinė,suggested_expense_category,soft,Other (vehicle fuel),Vehicle & fuel,False,
+12,Circle D Demo Degalinė,suggested_expense_category,soft,Vehicle & fuel,Vehicle & fuel,True,
 13,Senoji Trobelė Demo (UAB Demo Maistas),doc_type,hard,receipt,receipt,True,
 13,Senoji Trobelė Demo (UAB Demo Maistas),vendor_name,hard,Senoji Trobelė Demo (UAB Demo Maistas),Senoji Trobelė Demo,True,partial name match
 13,Senoji Trobelė Demo (UAB Demo Maistas),receipt_number,hard,0417-2026,0417-2026,True,
