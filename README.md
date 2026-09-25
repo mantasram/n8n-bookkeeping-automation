@@ -22,7 +22,7 @@ Demo videos: _coming soon_ — links will be added here. Author: [Mantas Ramošk
 
 **Result on the test pack:** 12 rows written (vendor, number, date, net, VAT, gross, currency, category). 11 pass validation. 1 is routed to `needs-review/` — the VAT amount does not equal net × rate, *and* the rate is not a valid rate for that country. The AI read the numbers correctly; arithmetic caught the error. Ground truth is in [`test-data/expected_output_v2.json`](test-data/expected_output_v2.json).
 
-**Measured, not eyeballed:** [`demo1-evals/`](demo1-evals/) is a small Python harness that scores each run against the ground truth. Current result: 100% on 115 hard fields (amounts, VAT, dates, invoice numbers, vendors), 10/11 expense categories, 12/12 documents routed correctly with 0 false passes, $0.21 per pack. Run history: [`demo1-evals/results/runs.csv`](demo1-evals/results/runs.csv).
+**Measured, not eyeballed:** [`demo1-evals/`](demo1-evals/) is a small Python harness that scores each run against the ground truth. Current result: 100% on 123 hard fields (amounts, VAT, dates, invoice numbers, vendors, countries), 10/11 expense categories, 12/12 documents routed correctly with 0 false passes, $0.21 per pack. Run history: [`demo1-evals/results/runs.csv`](demo1-evals/results/runs.csv).
 
 **Cost:** roughly $0.20 of API spend per 14-page pack with Claude Sonnet for both steps. Not optimised — text-first classification, a cheaper model for simple documents and prompt caching would bring this to a few cents.
 

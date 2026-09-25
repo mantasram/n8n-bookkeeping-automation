@@ -33,7 +33,7 @@ RESULTS_DIR = HERE / "results"
 # is a real error in the books.
 HARD_FIELDS = {
     "invoice":        ["vendor_name", "invoice_number", "invoice_date", "due_date",
-                       "currency", "net_total", "vat_rate_percent", "vat_amount", "gross_total"],
+                       "currency", "net_total", "vat_rate_percent", "vat_amount", "gross_total", "vendor_country"],
     "utility_bill":   ["vendor_name", "invoice_number", "invoice_date", "due_date",
                        "currency", "net_total", "vat_rate_percent", "vat_amount", "gross_total"],
     "receipt":        ["vendor_name", "receipt_number", "date",
@@ -240,6 +240,7 @@ def print_report(summary, details, routing, missing):
     for d in mismatches:
         print(f"  p.{d['pages']:<6} {d['document'][:28]:<28} {d['field']:<26} "
               f"expected {d['expected']!r}  got {d['actual']!r}  [{d['kind']}]")
+    print(f"  Total mismatches: {len(mismatches)}")
 
     for r in routing:
         if "problem" in r:
